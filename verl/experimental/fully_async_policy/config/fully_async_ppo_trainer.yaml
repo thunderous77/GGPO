@@ -1,0 +1,199 @@
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+trainer:
+
+  # Fully async training normally writes one terminal checkpoint even when
+  # save_freq is disabled. Smoke runs set this to false together with
+  # save_freq=-1 to leave no model or optimizer checkpoint behind.
+  save_final_checkpoint: true
+
+  # Optional actor-optimizer update budget for bounded runs. Null preserves
+  # the rollout-budget-driven behavior; smoke runs can set a positive integer.
+  max_optimizer_steps: null
+
+  # Optional update-boundary wall-clock stop. The two-hour validation reserves
+  # 900 seconds and may set this to 6300 for legacy launcher-relative timing.
+  controlled_stop_after_seconds: null
+
+  # Optional absolute Unix epoch deadline. Launchers should set this to
+  # job_start + 6300 so Ray/model setup consumes the same two-hour budget.
+  # It is mutually exclusive with controlled_stop_after_seconds.
+  controlled_stop_deadline_unix_seconds: null
+
+  # Optional adaptive update-boundary stop. The launcher derives the initial
+  # optimizer-step and finalization estimates from a full-shape smoke or prior
+  # lineage evidence and sets the hard deadline to the scheduler's TERM
+  # boundary. Runtime observations update the estimate, while
+  # trigger_parameter_sync_step automatically scales the admitted window.
+  # This is mutually exclusive with both legacy controlled-stop modes.
+  adaptive_controlled_stop: null
+
+async_training:
+
+  # Host-local smoke launchers set an absolute, non-symlink runtime root. When
+  # present, validation requires no-checkpoint settings and keeps every
+  # application-managed mutable path beneath this exact root.
+  runtime_root: null
+
+  # Host-local launchers may declare immutable roots that the smoke runtime and
+  # cleanup target must never overlap. Do not put machine-specific paths here.
+  protected_roots: []
+
+  # Native async rollout implementation. Both backends feed the same VERL
+  # learner and therefore share GRPO/GGPO loss and optimizer semantics.
+  rollout_backend: verl
+
+  # Maximum accepted learner-minus-behavior policy version. Leave null for
+  # legacy VERL GRPO sample-budget behavior; AReaL and GGPO require an explicit
+  # non-negative value (the smoke matrix uses 0).
+  max_policy_version_lag: null
+  # A queue item is one prompt group containing exactly rollout.n responses.
+  require_complete_groups: true
+
+  weight_sync:
+    # Null resolves beneath trainer.default_local_dir. The directory contains
+    # transient, versioned HF exports and must be visible to rollout workers.
+    export_dir: null
+
+  areal:
+    # Preserve verifier correctness as 0/1, then map it to the GGPO reward.
+    incorrect_reward: -5.0
+    correct_reward: 5.0
+    strict_6_2_topology: false
+    # AReaL is vendored under third_party/AReaL and loaded only for this backend.
+    # Null derives one data-parallel engine per reserved rollout GPU while
+    # preserving the configured tensor-parallel size. An explicit allocation
+    # must consume the same number of GPUs or startup fails closed.
+    backend: null
+    workflow: "areal.workflow.rlvr.RLVRWorkflow"
+    # Null bridges reward.custom_reward_function when configured, or VERL's
+    # registered batch scorer when its custom path is null. Other reward-manager
+    # combinations fail closed. Set an import path here only deliberately.
+    reward_fn: null
+    # Keep the outer wrapper above the verifier's 30-second inner timeout and
+    # bounded by the CPU reservation of each AReaL rollout worker.
+    reward_timeout_seconds: 45
+    reward_max_workers: 1
+    reward_max_retries: 0
+    # Host-local smoke/run launchers should override both paths with durable,
+    # per-run locations visible to every AReaL Ray worker.
+    fileroot: "./areal_runs"
+    name_resolve_root: "./areal_runs/name_resolve"
+    # Compatibility duplicate. It must resolve identically to the canonical
+    # data.apply_chat_template_kwargs value or validation fails.
+    enable_thinking: ${oc.select:data.apply_chat_template_kwargs.enable_thinking,false}
+    max_concurrent_rollouts: 8
+    # Prompt-level bound for full validation sets (for example Math500). The
+    # eval dispatcher shares inference servers but never retains all token
+    # trajectories at once.
+    validation_max_concurrent_rollouts: 8
+    queue_size: 32
+    # Backend admission must match the shared learner-side version cap.
+    max_head_offpolicyness: ${oc.select:async_training.max_policy_version_lag,0}
+    request_timeout: 600
+    request_retries: 2
+    setup_timeout: 600
+    worker_cpu: 4
+    worker_mem_gb: 32
+    seed: ${actor_rollout_ref.rollout.seed}
+    gpu_memory_utilization: ${actor_rollout_ref.rollout.gpu_memory_utilization}
+    max_num_seqs: ${actor_rollout_ref.rollout.max_num_seqs}
+    max_num_batched_tokens: ${actor_rollout_ref.rollout.max_num_batched_tokens}
+    enforce_eager: ${actor_rollout_ref.rollout.enforce_eager}
+    dtype: ${actor_rollout_ref.rollout.dtype}
+
+  # Maximum samples staleness threshold
+  staleness_threshold: 0.1
+
+  # Observability-only histogram boundary for learner-minus-rollout versions.
+  # This does not drop samples or alter the sample-budget semantics above.
+  observability_version_delta_reference: 8
+
+  # Frequency of parameter synchronization between rollouter and trainer, 
+  # One step means trainer obtains a batch of required samples
+  trigger_parameter_sync_step: 4
+  
+  # The number of ppo_mini_batches that the FullyAsyncTrainer obtains once
+  require_batches: 1
+
+  # Optional assertion of the prompt-group budget per learner update. When set,
+  # it must equal ppo_mini_batch_size*require_batches.
+  prompts_per_update: null
+
+  # Optional loss-masked physical padding for an actor data-parallel world
+  # that does not divide the fixed logical mini-batch. When enabled, exactly
+  # one complete rollout group is inserted after every logical mini-batch.
+  # The engine iterates over the physical size while every scientific loss
+  # continues to normalize by the unpadded logical size.
+  actor_update_padding:
+    enabled: false
+    groups_per_mini: 1
+
+  # When synchronizing parameters, Whether to resume generation when rollout is interrupted.
+  # If True, LLMServerClient auto resume generation, making rollout interruption invisible to the AgentLoop.
+  partial_rollout: True
+
+  # Whether to use trainer-side hybrid validation. Keep false for AReaL: its
+  # backend-native validation controller shares the rollout inference servers.
+  use_trainer_do_validate: False
+
+# Rollout config
+rollout:
+
+  # Number of nodes used in the rollout
+  nnodes: 1
+
+  # Number of GPUs per node                     
+  n_gpus_per_node: 8
+
+  # number of responses (i.e. num sample times). > 1 for grpo
+  n: 4
+
+  # total rollout samples # TODO rename to total_rollout_samples
+  total_rollout_steps: 100
+
+data:
+  # Number of samples generated, currently only support 1
+  gen_batch_size: 1
+
+  # Both rollout backends consume prompts admitted by the same canonical
+  # tokenizer/chat-template pass. AReaL validation rejects drift from these
+  # fail-closed overlength semantics.
+  filter_overlong_prompts: true
+  truncation: error
+
+actor_rollout_ref:
+
+  rollout:
+    # Public fully-async resource fields are compatibility duplicates. Hydra
+    # interpolation keeps defaults aligned; conflicting CLI overrides fail.
+    nnodes: ${rollout.nnodes}
+    n_gpus_per_node: ${rollout.n_gpus_per_node}
+    n: ${rollout.n}
+
+    # Must be enabled! Otherwise, log_probs cannot be calculated.
+    calculate_log_probs: True
+
+    checkpoint_engine:
+      backend: "nccl"
+
+  actor:
+    # Must use rollout log probs for training
+    use_rollout_log_probs: True
+
+  model:
+    # To use remove padding (thd)
+    use_remove_padding: True
+
+
+# Only then will the use of log probs be correct.
+# And it can be used in conjunction with other rollout_correction algorithms.
+algorithm:
+  rollout_correction:
+    bypass_mode: True

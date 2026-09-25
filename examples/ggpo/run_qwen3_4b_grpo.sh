@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3-4B-Base}"
+export ALGORITHM=grpo
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+exec bash "${SCRIPT_DIR}/run_math.sh" "$@"

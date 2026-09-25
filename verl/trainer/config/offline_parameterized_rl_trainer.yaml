@@ -1,0 +1,28 @@
+# Configurable offline studies use a separate contract. The sealed
+# AGRO/ASymPO launcher does not compose this file.
+defaults:
+  - offline_rl_trainer
+  - _self_
+
+offline_data:
+  contract: parameterized
+  expected_batches: ???
+  selection:
+    count: ???
+  prompt_groups_per_batch: ???
+  responses_per_group: ???
+  segment_optimizer_steps: ???
+
+data:
+  train_batch_size: ${offline_data.prompt_groups_per_batch}
+
+actor_rollout_ref:
+  rollout:
+    n: ${offline_data.responses_per_group}
+  actor:
+    policy_loss:
+      loss_mode: ???
+
+trainer:
+  experiment_name: ???
+  total_training_steps: ${offline_data.selection.count}

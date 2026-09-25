@@ -1,0 +1,30 @@
+# Configurable hybrid studies use a separate contract and trainer entry point.
+# The sealed 75H/25O GGPO launcher does not compose this file.
+defaults:
+  - ppo_trainer
+  - _self_
+
+hybrid_data:
+  contract: parameterized
+  historical_groups: 192
+  on_policy_groups: 64
+  responses_per_group: 8
+  minibatches: 8
+  selection_seed: 42
+  train_source_path: ???
+  dataset_root: ???
+  dataset_id: ???
+  expected_batches: ???
+  target_optimizer_steps: ???
+  segment_optimizer_steps: ???
+  smoke: false
+
+trainer:
+  trainer_class: verl.trainer.hybrid_rl.trainer.ParameterizedHybridRLTrainer
+  experiment_name: ???
+  total_training_steps: ${hybrid_data.target_optimizer_steps}
+
+actor_rollout_ref:
+  actor:
+    policy_loss:
+      loss_mode: ???

@@ -1,0 +1,41 @@
+# Compose the normal PPO components, then add the fail-closed offline contract.
+defaults:
+  - ppo_trainer
+  - _self_
+
+offline_data:
+  # The approved 100-step AGRO/ASymPO/GGPO experiment remains the default
+  # sealed contract. Preprocessed mixed-only runs use sealed_mixedfilt; its
+  # manifest supplies the pool size while this knob supplies training length.
+  contract: sealed_agro_asympo_100_step
+  mode: train
+  fully_offline: true
+  dataset_root: ???
+  dataset_id: ???
+  implementation_commit: ""
+  selection:
+    method: prefix
+    start: 0
+    count: 100
+  expected_batches: 286
+  total_training_rounds: 100
+  prompt_groups_per_batch: 256
+  responses_per_group: 8
+  segment_optimizer_steps: 20
+  smoke: false
+  old_log_probs_source: fixed_behavior
+  behavior_model_id: Qwen/Qwen3-1.7B-Base
+  behavior_model_revision: ""
+  source_path: ???
+  reward_kind: registered_boxed_answer_binary_math_verifier
+  binary_rewards: true
+  validation_path: ???
+  eval_checkpoint: null
+  eval_step: null
+  eval_receipt: null
+  eval_wandb_run_id: null
+  # Number of separately published validation History rows before this segment.
+  wandb_step_offset: 0
+
+trainer:
+  save_final_checkpoint: true
